@@ -814,7 +814,7 @@ namespace UnityEngine.Rendering.Universal.Internal
 
         // TODO: CoC reprojection once TAA gets in LW
         // TODO: Proper LDR/gamma support
-        void DoDepthOfField(Camera camera, CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination, Rect pixelRect)
+        void DoDepthOfField(Camera camera, CommandBuffer cmd, RTHandle source, RTHandle destination, Rect pixelRect)
         {
             if (m_DepthOfField.mode.value == DepthOfFieldMode.Gaussian)
                 DoGaussianDepthOfField(camera, cmd, source, destination, pixelRect);
@@ -822,7 +822,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                 DoBokehDepthOfField(cmd, source, destination, pixelRect);
         }
 
-        void DoGaussianDepthOfField(Camera camera, CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination, Rect pixelRect)
+        void DoGaussianDepthOfField(Camera camera, CommandBuffer cmd, RTHandle source, RTHandle destination, Rect pixelRect)
         {
             int downSample = 2;
             var material = m_Materials.gaussianDepthOfField;
@@ -932,7 +932,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             return Mathf.Min(0.05f, kRadiusInPixels / viewportHeight);
         }
 
-        void DoBokehDepthOfField(CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination, Rect pixelRect)
+        void DoBokehDepthOfField(CommandBuffer cmd, RTHandle source, RTHandle destination, Rect pixelRect)
         {
             int downSample = 2;
             var material = m_Materials.bokehDepthOfField;
@@ -1041,7 +1041,7 @@ namespace UnityEngine.Rendering.Universal.Internal
         // Hold the stereo matrices to avoid allocating arrays every frame
         internal static readonly Matrix4x4[] viewProjMatrixStereo = new Matrix4x4[2];
 #endif
-        void DoMotionBlur(CameraData cameraData, CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination)
+        void DoMotionBlur(CameraData cameraData, CommandBuffer cmd, RTHandle source, RTHandle destination)
         {
             var material = m_Materials.cameraMotionBlur;
 
@@ -1100,7 +1100,7 @@ namespace UnityEngine.Rendering.Universal.Internal
         #region Panini Projection
 
         // Back-ported & adapted from the work of the Stockholm demo team - thanks Lasse!
-        void DoPaniniProjection(Camera camera, CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination)
+        void DoPaniniProjection(Camera camera, CommandBuffer cmd, RTHandle source, RTHandle destination)
         {
             float distance = m_PaniniProjection.distance.value;
             var viewExtents = CalcViewExtents(camera);
@@ -1174,7 +1174,7 @@ namespace UnityEngine.Rendering.Universal.Internal
 
         #region Bloom
 
-        void SetupBloom(CommandBuffer cmd, RenderTargetIdentifier source, Material uberMaterial)
+        void SetupBloom(CommandBuffer cmd, RTHandle source, Material uberMaterial)
         {
             // Start at half-res
             int downres = 1;
