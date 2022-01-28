@@ -251,7 +251,7 @@ namespace UnityEngine.Rendering.Universal
             }
             m_OnRenderObjectCallbackPass = new InvokeOnRenderObjectCallbackPass(RenderPassEvent.BeforeRenderingPostProcessing);
 
-            m_PostProcessPasses = new PostProcessPasses(data.postProcessData, m_BlitMaterial);
+            m_PostProcessPasses = new PostProcessPasses(data.postProcessData, m_CoreBlitMaterial);
 
             m_CapturePass = new CapturePass(RenderPassEvent.AfterRendering);
             m_FinalBlitPass = new FinalBlitPass(RenderPassEvent.AfterRendering + 1, m_BlitMaterial);
