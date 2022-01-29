@@ -373,24 +373,6 @@ namespace UnityEngine.Rendering.Universal.Internal
             return cameraData.requireSrgbConversion && m_EnableSRGBConversionIfNeeded;
         }
 
-        private new void Blit(CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination, Material material, int passIndex = 0)
-        {
-            cmd.SetGlobalTexture(ShaderPropertyId.sourceTex, source);
-            if (m_UseDrawProcedural)
-            {
-                Vector4 scaleBias = new Vector4(1, 1, 0, 0);
-                cmd.SetGlobalVector(ShaderPropertyId.scaleBias, scaleBias);
-
-                cmd.SetRenderTarget(new RenderTargetIdentifier(destination, 0, CubemapFace.Unknown, -1),
-                    RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
-                cmd.DrawProcedural(Matrix4x4.identity, material, passIndex, MeshTopology.Quads, 4, 1, null);
-            }
-            else
-            {
-                cmd.Blit(source, destination, material, passIndex);
-            }
-        }
-
         private void DrawFullscreenMesh(CommandBuffer cmd, Material material, int passIndex)
         {
             if (m_UseDrawProcedural)
@@ -696,17 +678,6 @@ namespace UnityEngine.Rendering.Universal.Internal
                 cmd.ReleaseTemporaryRT(Shader.PropertyToID(m_InternalLut.name));
             }
         }
-
-        private BuiltinRenderTextureType BlitDstDiscardContent(CommandBuffer cmd, RenderTargetIdentifier rt)
-        {
-            // We set depth to DontCare because rt might be the source of PostProcessing used as a temporary target
-            // Source typically comes with a depth buffer and right now we don't have a way to only bind the color attachment of a RenderTargetIdentifier
-            cmd.SetRenderTarget(new RenderTargetIdentifier(rt, 0, CubemapFace.Unknown, -1),
-                RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store,
-                RenderBufferLoadAction.DontCare, RenderBufferStoreAction.DontCare);
-            return BuiltinRenderTextureType.CurrentActive;
-        }
-
         #region Sub-pixel Morphological Anti-aliasing
 
         void DoSubpixelMorphologicalAntialiasing(ref CameraData cameraData, CommandBuffer cmd, RTHandle source, RTHandle destination)
@@ -826,7 +797,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             cmd.SetGlobalVector(ShaderConstants._DownSampleScaleFactor, new Vector4(1.0f / downSample, 1.0f / downSample, downSample, downSample));
 
             // Compute CoC
-            Blit(cmd, source, m_FullCoCTexture.nameID, material, 0);
+            RenderingUtils.Blit(cmd, source, m_FullCoCTexture, material, 0, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
 
             // Downscale & prefilter color + coc
             m_MRT2[0] = m_HalfCoCTexture.nameID;
@@ -843,13 +814,13 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             // Blur
             cmd.SetGlobalTexture(ShaderConstants._HalfCoCTexture, m_HalfCoCTexture.nameID);
-            Blit(cmd, m_PingTexture.nameID, m_PongTexture.nameID, material, 2);
-            Blit(cmd, m_PongTexture.nameID, BlitDstDiscardContent(cmd, m_PingTexture.nameID), material, 3);
+            RenderingUtils.Blit(cmd, m_PingTexture, m_PongTexture, material, 2, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
+            RenderingUtils.Blit(cmd, m_PongTexture, m_PingTexture, material, 3, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
 
             // Composite
             cmd.SetGlobalTexture(ShaderConstants._ColorTexture, m_PingTexture.nameID);
             cmd.SetGlobalTexture(ShaderConstants._FullCoCTexture, m_FullCoCTexture.nameID);
-            Blit(cmd, source, BlitDstDiscardContent(cmd, destination), material, 4);
+            RenderingUtils.Blit(cmd, source, destination, material, 4, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
         }
 
         void PrepareBokehKernel(float maxRadius, float rcpAspect)
@@ -949,21 +920,21 @@ namespace UnityEngine.Rendering.Universal.Internal
             cmd.SetGlobalVector(ShaderConstants._BokehConstants, new Vector4(uvMargin, uvMargin * 2.0f));
 
             // Compute CoC
-            Blit(cmd, source, m_FullCoCTexture.nameID, material, 0);
+            RenderingUtils.Blit(cmd, source, m_FullCoCTexture, material, 0, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
             cmd.SetGlobalTexture(ShaderConstants._FullCoCTexture, m_FullCoCTexture.nameID);
 
             // Downscale & prefilter color + coc
-            Blit(cmd, source, m_PingTexture.nameID, material, 1);
+            RenderingUtils.Blit(cmd, source, m_PingTexture, material, 1, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
 
             // Bokeh blur
-            Blit(cmd, m_PingTexture.nameID, m_PongTexture.nameID, material, 2);
+            RenderingUtils.Blit(cmd, m_PingTexture, m_PongTexture, material, 2, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
 
             // Post-filtering
-            Blit(cmd, m_PongTexture.nameID, BlitDstDiscardContent(cmd, m_PingTexture.nameID), material, 3);
+            RenderingUtils.Blit(cmd, m_PongTexture, m_PingTexture, material, 3, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
 
             // Composite
             cmd.SetGlobalTexture(ShaderConstants._DofTexture, m_PingTexture.nameID);
-            Blit(cmd, source, BlitDstDiscardContent(cmd, destination), material, 4);
+            RenderingUtils.Blit(cmd, source, destination, material, 4, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
         }
 
         #endregion
@@ -1069,7 +1040,7 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             PostProcessUtils.SetSourceSize(cmd, m_Descriptor);
 
-            Blit(cmd, source, BlitDstDiscardContent(cmd, destination), material, (int)m_MotionBlur.quality.value);
+            RenderingUtils.Blit(cmd, source, destination, material, (int)m_MotionBlur.quality.value, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
         }
 
         #endregion
@@ -1097,7 +1068,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                 ? ShaderKeywordStrings.PaniniGeneric : ShaderKeywordStrings.PaniniUnitDistance
             );
 
-            Blit(cmd, source, BlitDstDiscardContent(cmd, destination), material);
+            RenderingUtils.Blit(cmd, source, destination, material, 0, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
         }
 
         Vector2 CalcViewExtents(Camera camera)
@@ -1196,7 +1167,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                 desc.height = Mathf.Max(1, desc.height >> 1);
             }
 
-            Blit(cmd, source, m_BloomMipDown[0], bloomMaterial, 0);
+            RenderingUtils.Blit(cmd, source, m_BloomMipDown[0], bloomMaterial, 0, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
 
             // Downsample - gaussian pyramid
             var lastDown = m_BloomMipDown[0];
@@ -1205,8 +1176,8 @@ namespace UnityEngine.Rendering.Universal.Internal
                 // Classic two pass gaussian blur - use mipUp as a temporary target
                 //   First pass does 2x downsampling + 9-tap gaussian
                 //   Second pass does 9-tap gaussian using a 5-tap filter + bilinear filtering
-                Blit(cmd, lastDown, m_BloomMipUp[i], bloomMaterial, 1);
-                Blit(cmd, m_BloomMipUp[i], m_BloomMipDown[i], bloomMaterial, 2);
+                RenderingUtils.Blit(cmd, lastDown, m_BloomMipUp[i], bloomMaterial, 1, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
+                RenderingUtils.Blit(cmd, m_BloomMipUp[i], m_BloomMipDown[i], bloomMaterial, 2, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
 
                 lastDown = m_BloomMipDown[i];
             }
@@ -1219,7 +1190,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                 var dst = m_BloomMipUp[i];
 
                 cmd.SetGlobalTexture(ShaderConstants._SourceTexLowMip, lowMip);
-                Blit(cmd, highMip, BlitDstDiscardContent(cmd, dst), bloomMaterial, 3);
+                RenderingUtils.Blit(cmd, highMip, dst, bloomMaterial, 3, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
             }
 
             // Setup bloom on uber
@@ -1479,7 +1450,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                     }
 
                     RenderingUtils.ReAllocateIfNeeded(ref m_ScalingSetupTarget, tempRtDesc, FilterMode.Point, TextureWrapMode.Clamp, name: "_ScalingSetupTexture");
-                    Blit(cmd, m_Source, m_ScalingSetupTarget, m_Materials.scalingSetup);
+                    RenderingUtils.Blit(cmd, m_Source, m_ScalingSetupTarget, m_Materials.scalingSetup, 0, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
 
                     sourceTex = m_ScalingSetupTarget;
                 }
