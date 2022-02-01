@@ -135,6 +135,7 @@ namespace UnityEngine.Rendering.Universal
                     : GraphicsFormat.B8G8R8A8_UNorm;
 
                 RenderingUtils.ReAllocateIfNeeded(ref m_RenderTarget, desc, FilterMode.Point, TextureWrapMode.Clamp, name: "_ScreenSpaceShadowmapTexture");
+                cmd.SetGlobalTexture(m_RenderTarget.name, m_RenderTarget.nameID);
 
                 ConfigureTarget(m_RenderTarget);
                 ConfigureClear(ClearFlag.None, Color.white);
@@ -154,18 +155,7 @@ namespace UnityEngine.Rendering.Universal
                 CommandBuffer cmd = CommandBufferPool.Get();
                 using (new ProfilingScope(cmd, m_ProfilingSampler))
                 {
-                    if (!renderingData.cameraData.xr.enabled)
-                    {
-                        cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-                        cmd.DrawMesh(RenderingUtils.fullscreenMesh, Matrix4x4.identity, m_Material);
-                        cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix, camera.projectionMatrix);
-                    }
-                    else
-                    {
-                        // Avoid setting and restoring camera view and projection matrices when in stereo.
-                        cmd.Blit(null, m_RenderTarget.nameID, m_Material);
-                    }
-
+                    Blitter.BlitCameraTexture(cmd, k_CameraTarget, m_RenderTarget, m_Material, 0);
                     CoreUtils.SetKeyword(cmd, ShaderKeywordStrings.MainLightShadows, false);
                     CoreUtils.SetKeyword(cmd, ShaderKeywordStrings.MainLightShadowCascades, false);
                     CoreUtils.SetKeyword(cmd, ShaderKeywordStrings.MainLightShadowScreen, true);

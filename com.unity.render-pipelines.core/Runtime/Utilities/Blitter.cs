@@ -235,7 +235,8 @@ namespace UnityEngine.Rendering
         public static void BlitTexture(CommandBuffer cmd, RTHandle source, Vector4 scaleBias, Material material, int pass)
         {
             s_PropertyBlock.SetVector(BlitShaderIDs._BlitScaleBias, scaleBias);
-            s_PropertyBlock.SetTexture(BlitShaderIDs._BlitTexture, source);
+            if (source?.rt != null)
+                s_PropertyBlock.SetTexture(BlitShaderIDs._BlitTexture, source);
             DrawTriangle(cmd, material, pass);
         }
 
