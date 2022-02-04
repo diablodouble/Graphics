@@ -1007,7 +1007,7 @@ namespace UnityEngine.Rendering.Universal.Internal
 
             PostProcessUtils.SetSourceSize(cmd, m_Descriptor);
 
-            RenderingUtils.Blit(cmd, source, destination, material, (int)m_MotionBlur.quality.value, m_UseDrawProcedural, RenderBufferLoadAction.DontCare);
+            Blitter.BlitCameraTexture(cmd, source, destination, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store, material, (int)m_MotionBlur.quality.value);
         }
 
         #endregion
