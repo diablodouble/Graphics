@@ -640,7 +640,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                 // we do an extra blit to ping pong results back to color texture. In future we should allow a Swap of the current active color texture
                 // in the pipeline to avoid this extra blit.
                 if (!m_ResolveToScreen && !m_UseSwapBuffer)
-                    RenderingUtils.Blit(cmd, cameraTargetHandle, m_Source, m_BlitMaterial, 0, SystemInfo.graphicsShaderLevel >= 30, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+                    Blitter.BlitCameraTexture(cmd, cameraTargetHandle, m_Source, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store, m_BlitMaterial, 0);
 
                 if (m_UseSwapBuffer && !m_ResolveToScreen)
                 {

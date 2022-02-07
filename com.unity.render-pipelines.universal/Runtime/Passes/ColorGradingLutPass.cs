@@ -199,7 +199,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                 renderingData.cameraData.xr.StopSinglePass(cmd);
 
                 // Render the lut
-                RenderingUtils.Blit(cmd, m_InternalLut, m_InternalLut, material, 0, false, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+                Blitter.BlitCameraTexture(cmd, k_CameraTarget, m_InternalLut, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store, material, 0);
 
                 renderingData.cameraData.xr.StartSinglePass(cmd);
             }
