@@ -250,7 +250,7 @@ namespace UnityEngine.Rendering
         /// <param name="bilinear">Enable bilinear filtering.</param>
         public static void BlitCameraTexture(CommandBuffer cmd, RTHandle source, RTHandle destination, float mipLevel = 0.0f, bool bilinear = false)
         {
-            Vector2 viewportScale = new Vector2(source.rtHandleProperties.rtHandleScale.x, source.rtHandleProperties.rtHandleScale.y);
+            Vector2 viewportScale = source.useScaling ? new Vector2(source.rtHandleProperties.rtHandleScale.x, source.rtHandleProperties.rtHandleScale.y) : Vector2.one;
             // Will set the correct camera viewport as well.
             CoreUtils.SetRenderTarget(cmd, destination);
             BlitTexture(cmd, source, viewportScale, mipLevel, bilinear);
@@ -267,7 +267,7 @@ namespace UnityEngine.Rendering
         /// <param name="bilinear">Enable bilinear filtering.</param>
         public static void BlitCameraTexture2D(CommandBuffer cmd, RTHandle source, RTHandle destination, float mipLevel = 0.0f, bool bilinear = false)
         {
-            Vector2 viewportScale = new Vector2(source.rtHandleProperties.rtHandleScale.x, source.rtHandleProperties.rtHandleScale.y);
+            Vector2 viewportScale = source.useScaling ? new Vector2(source.rtHandleProperties.rtHandleScale.x, source.rtHandleProperties.rtHandleScale.y) : Vector2.one;
             // Will set the correct camera viewport as well.
             CoreUtils.SetRenderTarget(cmd, destination);
             BlitTexture2D(cmd, source, viewportScale, mipLevel, bilinear);
@@ -285,7 +285,7 @@ namespace UnityEngine.Rendering
         /// <param name="pass">pass to use of the provided material</param>
         public static void BlitCameraTexture(CommandBuffer cmd, RTHandle source, RTHandle destination, Material material, int pass)
         {
-            Vector2 viewportScale = new Vector2(source.rtHandleProperties.rtHandleScale.x, source.rtHandleProperties.rtHandleScale.y);
+            Vector2 viewportScale = source.useScaling ? new Vector2(source.rtHandleProperties.rtHandleScale.x, source.rtHandleProperties.rtHandleScale.y) : Vector2.one;
             // Will set the correct camera viewport as well.
             CoreUtils.SetRenderTarget(cmd, destination);
             BlitTexture(cmd, source, viewportScale, material, pass);
@@ -322,7 +322,7 @@ namespace UnityEngine.Rendering
         /// <param name="bilinear">Enable bilinear filtering.</param>
         public static void BlitCameraTexture(CommandBuffer cmd, RTHandle source, RTHandle destination, Rect destViewport, float mipLevel = 0.0f, bool bilinear = false)
         {
-            Vector2 viewportScale = new Vector2(source.rtHandleProperties.rtHandleScale.x, source.rtHandleProperties.rtHandleScale.y);
+            Vector2 viewportScale = source.useScaling ? new Vector2(source.rtHandleProperties.rtHandleScale.x, source.rtHandleProperties.rtHandleScale.y) : Vector2.one;
             CoreUtils.SetRenderTarget(cmd, destination);
             cmd.SetViewport(destViewport);
             BlitTexture(cmd, source, viewportScale, mipLevel, bilinear);
