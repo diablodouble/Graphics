@@ -370,20 +370,10 @@ namespace UnityEngine.Rendering.Universal
 
                     // If true, SSAO pass is inserted after opaque pass and is expected to modulate lighting result now.
                     if (m_CurrentSettings.AfterOpaque)
-                    {
-                        CoreUtils.SetRenderTarget(
-                            cmd,
-                            m_Renderer.cameraColorTargetHandle,
-                            RenderBufferLoadAction.Load,
-                            RenderBufferStoreAction.Store,
-                            m_Renderer.cameraDepthTargetHandle,
-                            RenderBufferLoadAction.Load,
-                            RenderBufferStoreAction.Store,
-                            ClearFlag.None,
-                            Color.clear
-                        );
-                        cmd.DrawMesh(RenderingUtils.fullscreenMesh, Matrix4x4.identity, m_Material, 0, (int)ShaderPasses.AfterOpaque);
-                    }
+                        RenderingUtils.FinalBlit(  // TODO: Only final blit if there is no FinalBlitPass called after
+                            cmd, renderingData.cameraData, m_SSAOTextureFinal,
+                            m_Renderer.cameraColorTargetHandle, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store,
+                            m_Material, (int)ShaderPasses.AfterOpaque);
                 }
 
                 context.ExecuteCommandBuffer(cmd);
