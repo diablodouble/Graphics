@@ -123,6 +123,21 @@ GeoPoolMetadataEntry GetMetadataEntry(int instanceID, int batchID)
     return _GeoPoolGlobalMetadataBuffer[metadataIdx];
 }
 
+void PackMaterialKeyClusterCount(inout GeoPoolClusterEntry entry, int materialKey, int primitiveCount)
+{
+    entry.materialKey_PrimitiveCount = (materialKey & 0xFFFF) | ((primitiveCount & 0xFFFF) << 16);
+}
+
+int GetMaterialKey(GeoPoolClusterEntry entry)
+{
+    return entry.materialKey_PrimitiveCount & 0xFFFF;
+}
+
+int GetClusterPrimitiveCount(inout GeoPoolClusterEntry entry)
+{
+    return (entry.materialKey_PrimitiveCount >> 16) & 0xFFFF;
+}
+
 }
 
 #endif

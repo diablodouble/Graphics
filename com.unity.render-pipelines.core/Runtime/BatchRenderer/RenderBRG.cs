@@ -84,59 +84,6 @@ namespace UnityEngine.Rendering
         public int instanceIndex;
     }
 
-    struct SHProperties
-    {
-        public float4 SHAr;
-        public float4 SHAg;
-        public float4 SHAb;
-        public float4 SHBr;
-        public float4 SHBg;
-        public float4 SHBb;
-        public float4 SHC;
-
-        public SHProperties(SphericalHarmonicsL2 sh)
-        {
-            SHAr = GetSHA(sh, 0);
-            SHAg = GetSHA(sh, 1);
-            SHAb = GetSHA(sh, 2);
-
-            SHBr = GetSHB(sh, 0);
-            SHBg = GetSHB(sh, 1);
-            SHBb = GetSHB(sh, 2);
-
-            SHC = GetSHC(sh);
-        }
-
-        static float4 GetSHA(SphericalHarmonicsL2 sh, int i)
-        {
-            return new float4(sh[i, 3], sh[i, 1], sh[i, 2], sh[i, 0] - sh[i, 6]);
-        }
-
-        static float4 GetSHB(SphericalHarmonicsL2 sh, int i)
-        {
-            return new float4(sh[i, 4], sh[i, 5], sh[i, 6] * 3f, sh[i, 7]);
-        }
-
-        static float4 GetSHC(SphericalHarmonicsL2 sh)
-        {
-            return new float4(sh[0, 8], sh[1, 8], sh[2, 8], 1);
-        }
-    }
-
-    internal struct BRGInstanceBufferOffsets
-    {
-        public int localToWorld;
-        public int worldToLocal;
-        public int probeOffsetSHAr;
-        public int probeOffsetSHAg;
-        public int probeOffsetSHAb;
-        public int probeOffsetSHBr;
-        public int probeOffsetSHBg;
-        public int probeOffsetSHBb;
-        public int probeOffsetSHC;
-        public int probeOffsetOcclusion;
-    }
-
     unsafe class SceneBRG
     {
         private BatchRendererGroup m_BatchRendererGroup;
@@ -159,8 +106,10 @@ namespace UnityEngine.Rendering
         private LightMaps m_Lightmaps;
 
         private BRGTransformUpdater m_BRGTransformUpdater = new BRGTransformUpdater();
+        private GPUVisibilityBRG m_VisibilityBRG = null;
         private DeferredMaterialBRG m_DeferredMaterialBRG = null;
         GeometryPoolBatchHandle m_DeferredMaterialBatch = GeometryPoolBatchHandle.Invalid;
+        GPUInstanceBatchHandle m_VisibilityBatch = GPUInstanceBatchHandle.Invalid;
 
         private List<MeshRenderer> m_AddedRenderers;
 
@@ -890,10 +839,10 @@ namespace UnityEngine.Rendering
         }
 
         // Start is called before the first frame update
-        public void Initialize(List<MeshRenderer> renderers, DeferredMaterialBRG deferredMaterialBRG)
+        public void Initialize(List<MeshRenderer> renderers, DeferredMaterialBRG deferredMaterialBRG, GPUVisibilityBRG visibilityBRG)
         {
             m_BatchRendererGroup = new BatchRendererGroup(this.OnPerformCulling, IntPtr.Zero);
-            m_BRGTransformUpdater.Initialize();
+            m_BRGTransformUpdater.Initialize(1024, BRGTransformUpdaterFlags.EnableMeshBoundsUpdate);
 
             m_visibleInstancesBufferPool = new UploadBufferPool(10 * 3, 4096 * 1024);   // HACKS: Max 10 callbacks/frame, 3 frame hard coded reuse. 4MB maximum buffer size (1 million visible indices).
             m_frame = 0;
@@ -910,6 +859,7 @@ namespace UnityEngine.Rendering
             m_drawRanges = new NativeList<DrawRange>(Allocator.Persistent);
             m_AddedRenderers = new List<MeshRenderer>(renderersLength);
             m_DeferredMaterialBRG = deferredMaterialBRG;
+            m_VisibilityBRG = visibilityBRG;
 
             // Fill the GPU-persistent scene data ComputeBuffer
             int bigDataBufferVector4Count =
@@ -1051,7 +1001,7 @@ namespace UnityEngine.Rendering
 
                 vectorBuffer[probeOcclusionOffset + i] = probeOcclusion;
 
-                m_BRGTransformUpdater.RegisterTransformObject(i, rendererTransform, meshFilter.sharedMesh, renderer.lightProbeUsage == LightProbeUsage.BlendProbes);
+                m_BRGTransformUpdater.RegisterTransformObject(i, rendererTransform, renderer.lightProbeUsage == LightProbeUsage.BlendProbes, meshFilter.sharedMesh);
 
                 var mesh = m_BatchRendererGroup.RegisterMesh(usedMesh);
 
@@ -1293,6 +1243,12 @@ namespace UnityEngine.Rendering
                     m_DeferredMaterialBRG.DestroyBatch(m_DeferredMaterialBatch);
                     m_DeferredMaterialBatch = GeometryPoolBatchHandle.Invalid;
                 }
+
+                if (m_VisibilityBatch.valid)
+                {
+                    m_VisibilityBRG.DestroyInstanceBatch(m_VisibilityBatch);
+                    m_VisibilityBatch = GPUInstanceBatchHandle.Invalid;
+                }
             }
         }
     }
@@ -1356,10 +1312,10 @@ namespace UnityEngine.Rendering
 
         public bool EnableDeferredMaterials = false;
         public bool EnableTransformUpdate = true;
-        private GeometryPool m_GlobalGeoPool;
 
         private static uint s_DeferredMaterialBRGRef = 0;
         private static DeferredMaterialBRG s_DeferredMaterialBRG;
+        private static GPUVisibilityBRG s_VisibilityBRG;
 
         public static RenderBRGBindingData GetRenderBRGMaterialBindingData()
         {
@@ -1424,7 +1380,11 @@ namespace UnityEngine.Rendering
             if (!EnableDeferredMaterials)
                 return;
             if (s_DeferredMaterialBRGRef == 0)
+            {
                 s_DeferredMaterialBRG = new DeferredMaterialBRG();
+                s_VisibilityBRG = new GPUVisibilityBRG();
+                s_VisibilityBRG.Initialize(s_DeferredMaterialBRG.geometryPool, 2048);//TODO: make the vis brg regrow
+            }
             ++s_DeferredMaterialBRGRef;
         }
 
@@ -1440,6 +1400,9 @@ namespace UnityEngine.Rendering
 
             s_DeferredMaterialBRG.Dispose();
             s_DeferredMaterialBRG = null;
+
+            s_VisibilityBRG.Dispose();
+            s_VisibilityBRG = null;
         }
 
         private static void GetValidChildRenderers(GameObject root, List<MeshRenderer> toAppend)
@@ -1474,7 +1437,7 @@ namespace UnityEngine.Rendering
             Debug.Log("Loading scene: " + scene.name);
 #endif
             SceneBRG brg = new SceneBRG();
-            brg.Initialize(renderers, s_DeferredMaterialBRG);
+            brg.Initialize(renderers, s_DeferredMaterialBRG, s_VisibilityBRG);
             m_Scenes[scene] = brg;
         }
 
@@ -1493,6 +1456,11 @@ namespace UnityEngine.Rendering
             if (s_DeferredMaterialBRG != null)
             {
                 s_DeferredMaterialBRG.Update();
+            }
+
+            if (s_VisibilityBRG != null)
+            {
+                s_VisibilityBRG.Update();
             }
 
             foreach (var sceneBrg in m_Scenes)

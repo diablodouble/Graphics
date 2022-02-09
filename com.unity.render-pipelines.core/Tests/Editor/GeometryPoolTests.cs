@@ -83,6 +83,8 @@ namespace UnityEngine.Rendering.Tests
             public NativeArray<GeoPoolSubMeshEntry> gpuSubMeshEntryData;
             public NativeArray<GeoPoolMetadataEntry> gpuMetadatas;
             public NativeArray<GeoPoolBatchTableEntry> gpuBatchTable;
+            public NativeArray<GeoPoolClusterEntry> gpuClusterEntries;
+            public NativeArray<GeoPoolMeshEntry> gpuMeshEntries;
             public NativeArray<short> gpuBatchInstanceData;
 
             public void Load(GeometryPool geometryPool)
@@ -140,6 +142,21 @@ namespace UnityEngine.Rendering.Tests
                         batchInstances.CopyFrom(req.GetData<short>());
                 });
 
+                var clusterEntries = new NativeArray<GeoPoolClusterEntry>(geometryPool.maxClusterEntryCount, Allocator.Persistent);
+                m_cmdBuffer.RequestAsyncReadback(geometryPool.globalClusterEntryBuffer, (AsyncGPUReadbackRequest req) =>
+                {
+                    if (req.done)
+                        clusterEntries.CopyFrom(req.GetData<GeoPoolClusterEntry>());
+                });
+
+
+                var meshEntries = new NativeArray<GeoPoolMeshEntry>(geometryPool.maxMeshes, Allocator.Persistent);
+                m_cmdBuffer.RequestAsyncReadback(geometryPool.globalMeshEntryBuffer, (AsyncGPUReadbackRequest req) =>
+                {
+                    if (req.done)
+                        meshEntries.CopyFrom(req.GetData<GeoPoolMeshEntry>());
+                });
+
                 m_cmdBuffer.WaitAllAsyncReadbackRequests();
 
                 Graphics.ExecuteCommandBuffer(m_cmdBuffer);
@@ -150,6 +167,8 @@ namespace UnityEngine.Rendering.Tests
                 gpuMetadatas = metaData;
                 gpuBatchTable = batchTable;
                 gpuBatchInstanceData = batchInstances;
+                gpuClusterEntries = clusterEntries;
+                gpuMeshEntries = meshEntries;
             }
 
             public void Dispose()
@@ -161,6 +180,8 @@ namespace UnityEngine.Rendering.Tests
                 gpuSubMeshEntryData.Dispose();
                 gpuBatchTable.Dispose();
                 gpuBatchInstanceData.Dispose();
+                gpuClusterEntries.Dispose();
+                gpuMeshEntries.Dispose();
                 m_cmdBuffer.Dispose();
             }
         }
@@ -291,6 +312,42 @@ namespace UnityEngine.Rendering.Tests
             GeoPoolMetadataEntry metadataEntry = geopoolCpuData.gpuMetadatas[handle.index];
             Assert.AreEqual(metadataEntry.vertexOffset, idxVertexBlock.offset);
             Assert.AreEqual(metadataEntry.indexOffset, idxBufferBlock.offset);
+
+            //validate sequential clusters
+            GeoPoolMeshEntry meshEntry = geopoolCpuData.gpuMeshEntries[handle.index];
+            int currentCluster = meshEntry.clustersBufferIndex;
+            for (int subMeshIndex = 0; subMeshIndex < mesh.subMeshCount; ++subMeshIndex)
+            {
+                SubMeshDescriptor submeshDescriptor = mesh.GetSubMesh(subMeshIndex);
+                Material subMeshMaterial = null;
+                submeshMaterialMap.TryGetValue(subMeshIndex, out subMeshMaterial);
+
+                var geoPoolMaterialEntry = GeometryPoolMaterialEntry.NewDefault();
+                if (subMeshMaterial != null)
+                    geopoolCpuData.geoPool.globalMaterialEntries.TryGetValue(subMeshMaterial.GetHashCode(), out geoPoolMaterialEntry);
+
+
+                int clusterCounts = (submeshDescriptor.indexCount / 3 + GeometryPoolConstants.GeoPoolClusterPrimitiveCount - 1) / GeometryPoolConstants.GeoPoolClusterPrimitiveCount;
+                int indicesCount = 0;
+                for (int clusterIndex = 0; clusterIndex < clusterCounts; ++clusterIndex)
+                {
+                    GeoPoolClusterEntry clusterEntry = geopoolCpuData.gpuClusterEntries[currentCluster + clusterIndex];
+                    int materialKey = clusterEntry.materialKey_PrimitiveCount & 0xFFFF;
+                    int primitiveCount = clusterEntry.materialKey_PrimitiveCount >> 16;
+                    int predictedPrimitiveCount = Math.Min(GeometryPoolConstants.GeoPoolClusterPrimitiveCount, submeshDescriptor.indexCount / 3 - GeometryPoolConstants.GeoPoolClusterPrimitiveCount * clusterIndex);
+                    Assert.IsTrue(materialKey == geoPoolMaterialEntry.materialGPUKey);
+                    Assert.IsTrue(primitiveCount == predictedPrimitiveCount);
+                    Assert.IsTrue(clusterEntry.vertexOffset == idxVertexBlock.offset);
+
+                    int predictedIndexOffset = idxBufferBlock.offset + submeshDescriptor.indexStart + indicesCount;
+                    int actualIndexOffset = clusterEntry.indexOffset;
+                    Assert.IsTrue(actualIndexOffset == predictedIndexOffset);
+
+                    indicesCount += primitiveCount * 3;
+                }
+
+                currentCluster += clusterCounts;
+            }
         }
 
         internal void VerifyInstanceDataInPool(
