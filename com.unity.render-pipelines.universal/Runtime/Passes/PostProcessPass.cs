@@ -641,18 +641,35 @@ namespace UnityEngine.Rendering.Universal.Internal
                 }
 
                 // With camera stacking we not always resolve post to final screen as we might run post-processing in the middle of the stack.
-                RTHandle cameraTargetHandle;
+                RTHandle cameraTargetHandle = m_UseSwapBuffer ? targetDestination : m_Destination;
+                bool isRenderToBackBufferTarget;
                 if (m_UseSwapBuffer)
                 {
-                    cameraTargetHandle = m_ResolveToScreen ? m_CameraTargetHandle : targetDestination;
+                    isRenderToBackBufferTarget = m_ResolveToScreen;
                 }
                 else
                 {
-                    cameraTargetHandle = (m_Destination.nameID == BuiltinRenderTextureType.CameraTarget) ? m_CameraTargetHandle : m_Destination;
+                    isRenderToBackBufferTarget = m_Destination.nameID == BuiltinRenderTextureType.CameraTarget;
                     m_ResolveToScreen = cameraData.resolveFinalTarget || (m_Destination.nameID == cameraTargetID || m_HasFinalPass == true);
                 }
 
-                RenderingUtils.FinalBlit(cmd, cameraData, GetSource(), cameraTargetHandle, colorLoadAction, RenderBufferStoreAction.Store, m_Materials.uber, 0);
+                if (isRenderToBackBufferTarget)
+                    cameraTargetHandle = m_CameraTargetHandle;
+
+#if ENABLE_VR && ENABLE_XR_MODULE
+                if (cameraData.xr.enabled)
+                    isRenderToBackBufferTarget = cameraTargetHandle == cameraData.xr.renderTarget;
+#endif
+                RenderingUtils.FinalBlit(cmd, cameraData, isRenderToBackBufferTarget, GetSource(), cameraTargetHandle, colorLoadAction, RenderBufferStoreAction.Store, m_Materials.uber, 0);
+
+                bool setViewProjectionMatrices = true;
+#if ENABLE_VR && ENABLE_XR_MODULE
+                if (cameraData.xr.enabled)
+                    setViewProjectionMatrices = false;
+#endif
+
+                if (setViewProjectionMatrices)
+                    cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
 
                 // TODO: Implement swapbuffer in 2DRenderer so we can remove this
                 // For now, when render post-processing in the middle of the camera stack (not resolving to screen)
@@ -686,6 +703,9 @@ namespace UnityEngine.Rendering.Universal.Internal
                 }
 
                 // Cleanup
+                if (setViewProjectionMatrices)
+                    cmd.SetViewProjectionMatrices(cameraData.camera.worldToCameraMatrix, cameraData.camera.projectionMatrix);
+
                 if (tempTargetUsed)
                     cmd.ReleaseTemporaryRT(ShaderConstants._TempTarget);
 
@@ -1440,7 +1460,7 @@ namespace UnityEngine.Rendering.Universal.Internal
             if (m_UseSwapBuffer)
                 m_Source = cameraData.renderer.GetCameraColorBackBuffer(cmd);
 
-            var sourceTex = m_Source;
+            RTHandle sourceTex = m_Source;
 
             var colorLoadAction = cameraData.isDefaultViewport ? RenderBufferLoadAction.DontCare : RenderBufferLoadAction.Load;
 
@@ -1465,8 +1485,6 @@ namespace UnityEngine.Rendering.Universal.Internal
 
                 m_Materials.scalingSetup.shaderKeywords = null;
 
-                var sourceRtId = m_Source;
-
                 if (isSetupRequired)
                 {
                     if (isFxaaEnabled)
@@ -1483,8 +1501,6 @@ namespace UnityEngine.Rendering.Universal.Internal
                     Blit(cmd, m_Source, m_ScalingSetupTarget, m_Materials.scalingSetup);
 
                     sourceTex = m_ScalingSetupTarget;
-
-                    sourceRtId = m_ScalingSetupTarget;
                 }
 
                 switch (cameraData.imageScalingMode)
@@ -1523,7 +1539,7 @@ namespace UnityEngine.Rendering.Universal.Internal
                                 var fsrOutputSize = new Vector2(cameraData.pixelWidth, cameraData.pixelHeight);
                                 FSRUtils.SetEasuConstants(cmd, fsrInputSize, fsrInputSize, fsrOutputSize);
 
-                                Blit(cmd, sourceRtId, m_UpscaledTarget, m_Materials.easu);
+                                Blit(cmd, sourceTex, m_UpscaledTarget, m_Materials.easu);
 
                                 // RCAS
                                 // Use the override value if it's available, otherwise use the default.
@@ -1578,10 +1594,12 @@ namespace UnityEngine.Rendering.Universal.Internal
                 m_CameraTargetHandle?.Release();
                 m_CameraTargetHandle = RTHandles.Alloc(cameraTarget);
             }
-
-            RenderingUtils.FinalBlit(cmd, cameraData, sourceTex, m_CameraTargetHandle, colorLoadAction, RenderBufferStoreAction.Store, material, 0);
-
-            cameraData.renderer.ConfigureCameraTarget(m_CameraTargetHandle, m_CameraTargetHandle);
+            bool isRenderToBackBufferTarget = true;
+#if ENABLE_VR && ENABLE_XR_MODULE
+            if (cameraData.xr.enabled)
+                isRenderToBackBufferTarget = m_CameraTargetHandle == cameraData.xr.renderTarget;
+#endif
+            RenderingUtils.FinalBlit(cmd, cameraData, isRenderToBackBufferTarget, sourceTex, m_CameraTargetHandle, colorLoadAction, RenderBufferStoreAction.Store, material, 0);
         }
 
         #endregion
