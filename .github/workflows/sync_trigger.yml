@@ -1,11 +1,12 @@
+# A sync-repo trigger to be fired from Partner repos
+# (docs: https://github.cds.internal.unity3d.com/unity/git-remotes-sync)
 # NOTE: This workflow will/should only be run on the partner repos
-# (notice the trigger-sync['if'] item).
-# testing yamato
-# second test
+#       notice the trigger-sync['if'] item.
 name: Trigger-sync-with-partner
 on:
   push:
     branches:
+      # List of partner branches that needs to be synced
       - 'partner/crazyhunter**'
 
 jobs:
@@ -32,7 +33,7 @@ jobs:
       SYNC_WORKFLOW_BRANCH: "gh-action"
 
     steps:
-      - name: Trigger Yamato sync
+      - name: Trigger sync with partner
         run: |
             sync_workflow_dispatch_endpoint="${SYNC_API_URL}/repos/${SYNC_REPO_OWNER}/${SYNC_REPO_NAME}/actions/workflows/${SYNC_WORKFLOW_PATH}/dispatches"
 
