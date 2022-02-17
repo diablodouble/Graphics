@@ -152,6 +152,7 @@ namespace UnityEngine.Rendering
             public static readonly int _GeoPoolGlobalSubMeshEntryBuffer = Shader.PropertyToID("_GeoPoolGlobalSubMeshEntryBuffer");
             public static readonly int _GeoPoolGlobalMetadataBuffer = Shader.PropertyToID("_GeoPoolGlobalMetadataBuffer");
             public static readonly int _GeoPoolGlobalBatchTableBuffer = Shader.PropertyToID("_GeoPoolGlobalBatchTableBuffer");
+            public static readonly int _GeoPoolMeshEntriesBuffer = Shader.PropertyToID("_GeoPoolMeshEntriesBuffer");
             public static readonly int _GeoPoolGlobalBatchInstanceBuffer = Shader.PropertyToID("_GeoPoolGlobalBatchInstanceBuffer");
             public static readonly int _GeoPoolGlobalParams = Shader.PropertyToID("_GeoPoolGlobalParams");
             public static readonly int _OutputSubMeshLookupBuffer = Shader.PropertyToID("_OutputSubMeshLookupBuffer");
@@ -1282,6 +1283,7 @@ namespace UnityEngine.Rendering
             cmdBuffer.SetComputeBufferParam(cs, kernel, GeoPoolShaderIDs._GeoPoolGlobalMetadataBuffer, globalMetadataBuffer);
             cmdBuffer.SetComputeBufferParam(cs, kernel, GeoPoolShaderIDs._GeoPoolGlobalBatchTableBuffer, globalBatchTableBuffer);
             cmdBuffer.SetComputeBufferParam(cs, kernel, GeoPoolShaderIDs._GeoPoolGlobalBatchInstanceBuffer, globalBatchInstanceBuffer);
+            cmdBuffer.SetComputeBufferParam(cs, kernel, GeoPoolShaderIDs._GeoPoolMeshEntriesBuffer, globalMeshEntryBuffer);
             cmdBuffer.SetComputeVectorParam(cs, GeoPoolShaderIDs._GeoPoolGlobalParams, GetPackedGeoPoolParam0());
         }
 
@@ -1294,6 +1296,7 @@ namespace UnityEngine.Rendering
             material.SetBuffer(GeoPoolShaderIDs._GeoPoolGlobalMetadataBuffer, globalMetadataBuffer);
             material.SetBuffer(GeoPoolShaderIDs._GeoPoolGlobalBatchTableBuffer, globalBatchTableBuffer);
             material.SetBuffer(GeoPoolShaderIDs._GeoPoolGlobalBatchInstanceBuffer, globalBatchInstanceBuffer);
+            material.SetBuffer(GeoPoolShaderIDs._GeoPoolMeshEntriesBuffer, globalMeshEntryBuffer);
             material.SetVector(GeoPoolShaderIDs._GeoPoolGlobalParams, GetPackedGeoPoolParam0());
         }
 
@@ -1306,6 +1309,7 @@ namespace UnityEngine.Rendering
             cmdBuffer.SetGlobalBuffer(GeoPoolShaderIDs._GeoPoolGlobalMetadataBuffer, globalMetadataBuffer);
             cmdBuffer.SetGlobalBuffer(GeoPoolShaderIDs._GeoPoolGlobalBatchTableBuffer, globalBatchTableBuffer);
             cmdBuffer.SetGlobalBuffer(GeoPoolShaderIDs._GeoPoolGlobalBatchInstanceBuffer, globalBatchInstanceBuffer);
+            cmdBuffer.SetGlobalBuffer(GeoPoolShaderIDs._GeoPoolMeshEntriesBuffer, globalMeshEntryBuffer);
             cmdBuffer.SetGlobalVector(GeoPoolShaderIDs._GeoPoolGlobalParams, GetPackedGeoPoolParam0());
         }
     }

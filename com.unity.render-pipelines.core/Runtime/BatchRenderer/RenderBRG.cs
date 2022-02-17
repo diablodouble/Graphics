@@ -1045,6 +1045,11 @@ namespace UnityEngine.Rendering
                 new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int)bigDataBufferVector4Count * 16 / 4, 4);
             m_GPUPersistentInstanceData.SetData(vectorBuffer);
 
+
+#if DEBUG_LOG_SCENE
+            Debug.Log("DrawRanges: " + m_drawRanges.Length + ", DrawBatches: " + m_drawBatches.Length + ", Instances: " + m_instances.Length);
+#endif
+
             // Prefix sum to calculate draw offsets for each DrawRange
             int prefixSum = 0;
             for (int i = 0; i < m_drawRanges.Length; i++)
@@ -1148,14 +1153,6 @@ namespace UnityEngine.Rendering
             if (m_VisibilityBRG != null && deferredMaterialRenderers.Count > 1)
                 m_VisibilityBatch = m_VisibilityBRG.CreateBatchFromGameObjectInstances(deferredMaterialRenderers);
 
-#if DEBUG_LOG_SCENE
-            Debug.Log(
-                "DrawRanges: " + m_drawRanges.Length +
-                ", DrawBatches: " + m_drawBatches.Length +
-                ", CPU Instances: " + m_instances.Length +
-                ", GPU Clustered Instances: " + (m_VisibilityBatch.valid ? m_VisibilityBRG.GetInstanceCount(m_VisibilityBatch) : 0));
-#endif
-
             m_initialized = true;
         }
 
@@ -1166,12 +1163,12 @@ namespace UnityEngine.Rendering
             m_frame++;
         }
 
-        public void StartUpdateJobs()
+        public void StartTransformsUpdate()
         {
             m_BRGTransformUpdater.StartUpdateJobs();
         }
 
-        public bool EndUpdateJobs(CommandBuffer cmdBuffer)
+        public bool EndTransformsUpdate(CommandBuffer cmdBuffer)
         {
             return m_BRGTransformUpdater.EndUpdateJobs(
                 cmdBuffer,
@@ -1342,7 +1339,7 @@ namespace UnityEngine.Rendering
             if (s_VisibilityBRGRef == 0)
             {
                 s_VisibilityBRG = new GPUVisibilityBRG();
-                s_VisibilityBRG.Initialize(2048);//TODO: make the vis brg regrow
+                s_VisibilityBRG.Initialize(GPUVisibilityBRGDesc.NewDefault());
             }
             ++s_VisibilityBRGRef;
         }
@@ -1409,6 +1406,9 @@ namespace UnityEngine.Rendering
 
         private void Update()
         {
+            ////////////////////////////////
+            ///// General Update loop //////
+            ////////////////////////////////
             foreach (var sceneBrg in m_Scenes)
             {
                 if (sceneBrg.Value == null)
@@ -1417,38 +1417,48 @@ namespace UnityEngine.Rendering
                 sceneBrg.Value.Update();
             }
 
+            if (s_VisibilityBRG != null)
+                s_VisibilityBRG.Update();
+            ////////////////////////////////
 
+            ////////////////////////////////
+            ///// Transform update loop ////
+            ////////////////////////////////
             if (EnableTransformUpdate)
             {
                 m_gpuCmdBuffer.Clear();
 
+                int gpuCmds = 0;
                 if (s_VisibilityBRG != null)
-                    s_VisibilityBRG.StartUpdateJobs();
-
-                foreach (var sceneBrg in m_Scenes)
                 {
-                    if (sceneBrg.Value == null)
-                        continue;
-
-                    sceneBrg.Value.StartUpdateJobs();
+                    s_VisibilityBRG.StartInstanceTransformUpdateJobs();
                 }
 
-                int gpuCmds = 0;
-                if (s_VisibilityBRG != null && s_VisibilityBRG.EndUpdateJobs(m_gpuCmdBuffer))
-                    ++gpuCmds;
+                foreach (var sceneBrg in m_Scenes)
+                {
+                    if (sceneBrg.Value == null)
+                        continue;
+
+                    sceneBrg.Value.StartTransformsUpdate();
+                }
 
                 foreach (var sceneBrg in m_Scenes)
                 {
                     if (sceneBrg.Value == null)
                         continue;
 
-                    if (sceneBrg.Value.EndUpdateJobs(m_gpuCmdBuffer))
+                    if (sceneBrg.Value.EndTransformsUpdate(m_gpuCmdBuffer))
                         ++gpuCmds;
                 }
 
+                if (s_VisibilityBRG != null && s_VisibilityBRG.EndInstanceTransformUpdateJobs(m_gpuCmdBuffer))
+                    ++gpuCmds;
+
+                ///We only submit if there was any update job (i.e. any probe or transform changed)
                 if (gpuCmds > 0)
                     Graphics.ExecuteCommandBuffer(m_gpuCmdBuffer);
             }
+            //////////////////////////////////
         }
 
         private void OnDestroy()

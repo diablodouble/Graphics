@@ -1,0 +1,105 @@
+#pragma kernel MainWriteVisibleInstances
+#pragma kernel MainWriteIndirectArgs
+#pragma kernel MainWriteVisibleClusters
+
+#include "Packages/com.unity.render-pipelines.core/Runtime/GeometryPool/Resources/GeometryPool.hlsl"
+
+//#pragma enable_d3d11_debug_symbols
+
+#define GROUP_SIZE 64
+#define InvalidValue 0xffffffff
+
+int _DeferredMaterialInstanceDataAddress;
+int _TotalInstanceCount;
+ByteAddressBuffer _InputInstances;
+ByteAddressBuffer _BigInstanceBuffer;
+RWByteAddressBuffer _InstanceOutCounter;
+RWByteAddressBuffer _VisibleInstanceBuffer;
+
+bool IsInstanceVisible(uint instanceID)
+{
+    //TODO: test visibility against frustum here
+    return true;
+}
+
+[numthreads(GROUP_SIZE,1,1)]
+void MainWriteVisibleInstances(uint3 dispatchThreadID : SV_DispatchThreadID)
+{
+    if (dispatchThreadID.x >= (uint)_TotalInstanceCount)
+        return;
+
+    uint instanceOffset = dispatchThreadID.x;
+    uint instanceID = _InputInstances.Load(instanceOffset << 2);
+    uint geoHandle = _BigInstanceBuffer.Load(_DeferredMaterialInstanceDataAddress + instanceID * 16);
+    GeoPoolMeshEntry meshEntry = GeometryPool::GetMeshEntry(geoHandle);
+
+    if (!IsInstanceVisible(instanceID))
+        return;
+
+    uint outInstanceIndex;
+    _InstanceOutCounter.InterlockedAdd(0, 1, outInstanceIndex);
+
+    _VisibleInstanceBuffer.Store(outInstanceIndex << 2, instanceID);
+}
+
+int _MaxCounterValue;
+ByteAddressBuffer _InputCounterBuffer;
+RWStructuredBuffer<uint> _OutIndirectArgs;
+
+[numthreads(1,1,1)]
+void MainWriteIndirectArgs()
+{
+    uint counter = (uint)min(_InputCounterBuffer.Load(0), _MaxCounterValue);
+    _OutIndirectArgs[0] = (counter + 63) / 64;
+    _OutIndirectArgs[1] = 1;
+    _OutIndirectArgs[2] = 1;
+}
+
+int _MaxOutputClusterOffset;
+ByteAddressBuffer _InputInstanceCounter;
+ByteAddressBuffer _InputVisibleInstanceBuffer;
+RWByteAddressBuffer _ClustersOutCounter;
+RWByteAddressBuffer _OutVisibleClustersBuffer;
+
+[numthreads(GROUP_SIZE,1,1)]
+void MainWriteVisibleClusters(uint3 dispatchThreadID : SV_DispatchThreadID)
+{
+    uint numOfInstances = _InputInstanceCounter.Load(0);
+    if (dispatchThreadID.x >= (uint)numOfInstances)
+        return;
+
+    uint instanceID = _InputVisibleInstanceBuffer.Load(dispatchThreadID.x << 2);
+    uint geoHandle = _BigInstanceBuffer.Load(_DeferredMaterialInstanceDataAddress + instanceID * 16);
+    GeoPoolMeshEntry meshEntry = GeometryPool::GetMeshEntry(geoHandle);
+
+    uint clusterOutputIndex;
+    _ClustersOutCounter.InterlockedAdd(0, meshEntry.clustersCounts, clusterOutputIndex);
+    if (clusterOutputIndex >= (uint)_MaxOutputClusterOffset)
+        return;
+
+    //naively write visible clusters.
+    [loop]
+    for (int i = 0; i < meshEntry.clustersCounts; ++i)
+    {
+        uint clusterIndex = (uint)(meshEntry.clustersBufferIndex + i);
+        uint packedClusterInfo = (instanceID & 0xFFFF) | (clusterIndex << 16);
+        _OutVisibleClustersBuffer.Store((clusterOutputIndex + i) << 2, packedClusterInfo);
+    }
+}
+
+ByteAddressBuffer _InputClusterCounter;
+ByteAddressBuffer _InputClustersBuffer;
+
+[numthreads(GROUP_SIZE,1,1)]
+void MainWriteVisibleIndices(uint3 dispatchThreadID : SV_DispatchThreadID)
+{
+    uint numOfClusters = _InputClusterCounter.Load(0);
+    if (dispatchThreadID.x >= (uint)numOfClusters)
+        return;
+
+    uint packedClusterInfo = _InputClustersBuffer.Load(dispatchThreadID.x << 2);
+    uint instanceID = packedClusterInfo & 0xFFFF;
+    uint clusterIndex = packedClusterInfo >> 16;
+
+    //Spit out index
+}

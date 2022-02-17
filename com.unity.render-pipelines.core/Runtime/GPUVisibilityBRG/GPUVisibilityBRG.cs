@@ -6,6 +6,22 @@ using Unity.Jobs;
 
 namespace UnityEngine.Rendering
 {
+    internal struct GPUVisibilityBRGDesc
+    {
+        public int maxInstances;
+        public GeometryPoolDesc geometryPoolDesc;
+        public GPUVisibilityCullerDesc cullerDesc;
+
+        public static GPUVisibilityBRGDesc NewDefault()
+        {
+            return new GPUVisibilityBRGDesc()
+            {
+                maxInstances = 4096,
+                geometryPoolDesc = GeometryPoolDesc.NewDefault(),
+                cullerDesc = GPUVisibilityCullerDesc.NewDefault()
+            };
+        }
+    }
 
     internal struct GPUInstanceBatchHandle : IEquatable<GPUInstanceBatchHandle>
     {
@@ -26,6 +42,9 @@ namespace UnityEngine.Rendering
         private GeometryPool m_GeoPool = null;
         private GPUVisibilityInstancePool m_InstancePool = new GPUVisibilityInstancePool();
         private GPUInstanceDataBufferUploader.GPUResources m_UploadResources;
+        private bool m_InstancePoolDirty = false;
+
+        private GPUVisibilityCuller m_GPUCuller = new GPUVisibilityCuller();
 
         public GeometryPool geometryPool => m_GeoPool;
 
@@ -34,12 +53,16 @@ namespace UnityEngine.Rendering
             public bool isValid;
             public bool validLightMaps;
             public NativeList<GPUVisibilityInstance> instances;
+            public NativeList<GeometryPoolHandle> geoPoolHandles;
             public LightMaps lightmaps;
 
             public void Dispose()
             {
                 if (instances.IsCreated)
                     instances.Dispose();
+
+                if (geoPoolHandles.IsCreated)
+                    geoPoolHandles.Dispose();
 
                 if (validLightMaps)
                     lightmaps.Destroy();
@@ -49,19 +72,34 @@ namespace UnityEngine.Rendering
         private List<GPUInstanceBatchData> m_Batches = new List<GPUInstanceBatchData>();
         private NativeList<GPUInstanceBatchHandle> m_FreeBatchSlots = new NativeList<GPUInstanceBatchHandle>(64, Allocator.Persistent);
 
-        public void Initialize(int maxEntities)
+        public void Initialize(GPUVisibilityBRGDesc desc)
         {
-            m_GeoPool = new GeometryPool(GeometryPoolDesc.NewDefault());
-            m_InstancePool.Initialize(maxEntities);
+            m_GeoPool = new GeometryPool(desc.geometryPoolDesc);
+            m_InstancePool.Initialize(desc.maxInstances);
             m_UploadResources = new GPUInstanceDataBufferUploader.GPUResources();
+            m_GPUCuller.Initialize(
+                desc.cullerDesc,
+                m_InstancePool.bigBuffer.gpuBuffer,
+                m_InstancePool.bigBuffer.GetGpuAddress(GPUInstanceDataBuffer.DefaultSchema.unity_ObjectToWorld),
+                m_InstancePool.bigBuffer.GetGpuAddress(GPUInstanceDataBuffer.DefaultSchema.unity_WorldToObject),
+                m_InstancePool.bigBuffer.GetGpuAddress(GPUInstanceDataBuffer.DefaultSchema._DeferredMaterialInstanceData));
         }
 
-        public void StartUpdateJobs()
+        public void Update()
+        {
+            if (m_InstancePoolDirty)
+            {
+                m_GPUCuller.UpdateActiveInstanceBuffer(m_InstancePool.aliveInstanceIndices);
+                m_InstancePoolDirty = false;
+            }
+        }
+
+        public void StartInstanceTransformUpdateJobs()
         {
             m_InstancePool.StartUpdateJobs();
         }
 
-        public bool EndUpdateJobs(CommandBuffer cmdBuffer)
+        public bool EndInstanceTransformUpdateJobs(CommandBuffer cmdBuffer)
         {
             return m_InstancePool.EndUpdateJobs(cmdBuffer);
         }
@@ -94,6 +132,10 @@ namespace UnityEngine.Rendering
             batchState.isValid = true;
             if (!batchState.instances.IsCreated)
                 batchState.instances = new NativeList<GPUVisibilityInstance>(64, Allocator.Persistent);
+
+            if (!batchState.geoPoolHandles.IsCreated)
+                batchState.geoPoolHandles = new NativeList<GeometryPoolHandle>(64, Allocator.Persistent);
+
             m_Batches[handle.index] = batchState;
             return handle;
         }
@@ -229,6 +271,7 @@ namespace UnityEngine.Rendering
             bigBufferUploader.SubmitToGpu(ref m_UploadResources);
             bigBufferUploader.Dispose();
             m_Batches[batchHandle.index] = batchState;
+            m_InstancePoolDirty = true;
             ///////////////////////////////////////////////
         }
 
@@ -246,14 +289,21 @@ namespace UnityEngine.Rendering
 
             GPUInstanceBatchData batchState = m_Batches[batchHandle.index];
             batchState.isValid = false;
+
             //free the instances
             for (int i = 0; i < batchState.instances.Length; ++i)
             {
-                GPUVisibilityInstance instance = batchState.instances[i];
-                m_InstancePool.FreeVisibilityEntity(instance);
+                m_InstancePool.FreeVisibilityEntity(batchState.instances[i]);
+            }
+
+            //free the geo pool handles
+            for (int i = 0; i < batchState.geoPoolHandles.Length; ++i)
+            {
+                m_GeoPool.Unregister(batchState.geoPoolHandles[i]);
             }
 
             batchState.instances.Clear();
+            batchState.geoPoolHandles.Clear();
             m_Batches[batchHandle.index] = batchState;
         }
 
@@ -268,6 +318,7 @@ namespace UnityEngine.Rendering
                 b.Dispose();
             }
             m_Batches.Clear();
+            m_GPUCuller.Dispose();
         }
     }
 }
